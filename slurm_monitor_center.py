@@ -260,16 +260,22 @@ def collect_snapshot(
 
     for user in users:
         payload: Dict[str, object]
-        source = "file"
+        source = "push"
         received_at = None
         cached = store.get(user)
         if cached and isinstance(cached.get("payload"), dict):
             payload = cached["payload"]  # type: ignore[assignment]
-            source = "push"
             received_at = cached.get("received_at")
         else:
-            path = collector_dir / f"{user}.json"
-            payload = read_user_snapshot(path)
+            payload = {
+                "user": user,
+                "timestamp": None,
+                "host": None,
+                "error": "No pushed snapshot yet.",
+                "running_jobs": [],
+                "pending_jobs": [],
+            }
+            source = "missing"
 
         user_running = payload.get("running_jobs", []) if isinstance(payload, dict) else []
         user_pending = payload.get("pending_jobs", []) if isinstance(payload, dict) else []

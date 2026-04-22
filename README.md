@@ -94,6 +94,7 @@ If you need remote UI access (not recommended by default), add:
 
 - **Collector Status**
   - user, host, collector timestamp, center receive time, source, error state
+  - source is `push` or `missing` (center no longer falls back to local file snapshots)
 - **Running Jobs & GPU Metrics**
   - grouped by user, expandable job blocks, nvitop-style bars (MEM / UTIL / PWR)
   - per-GPU history chart (fixed y-scale by metric type)
