@@ -60,6 +60,23 @@ def run_ssh(node: str, remote_cmd: str, timeout: int = 20) -> str:
     return run_cmd(cmd, timeout=timeout)
 
 
+def run_ssh_with_connect_timeout(node: str, remote_cmd: str, ssh_connect_timeout: int, timeout: int = 20) -> str:
+    cmd = [
+        "ssh",
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "StrictHostKeyChecking=no",
+        "-o",
+        "UserKnownHostsFile=/dev/null",
+        "-o",
+        f"ConnectTimeout={ssh_connect_timeout}",
+        node,
+        remote_cmd,
+    ]
+    return run_cmd(cmd, timeout=timeout)
+
+
 def safe_int(x: str, default: int = 0) -> int:
     try:
         return int(float(x))
@@ -154,12 +171,12 @@ def get_pending_jobs(user: str) -> List[Dict[str, object]]:
     return jobs
 
 
-def get_node_gpu_metrics(node: str) -> List[Dict[str, object]]:
+def get_node_gpu_metrics(node: str, gpu_timeout: int, ssh_connect_timeout: int) -> List[Dict[str, object]]:
     cmd = (
         "nvidia-smi --query-gpu=index,name,memory.used,memory.total,utilization.gpu,power.draw,power.limit "
         "--format=csv,noheader,nounits"
     )
-    out = run_ssh(node, cmd, timeout=15)
+    out = run_ssh_with_connect_timeout(node, cmd, ssh_connect_timeout=ssh_connect_timeout, timeout=gpu_timeout)
     metrics: List[Dict[str, object]] = []
     for line in out.splitlines():
         parts = [x.strip() for x in line.split(",")]
@@ -177,10 +194,38 @@ def get_node_gpu_metrics(node: str) -> List[Dict[str, object]]:
                 "power_limit_w": safe_float(plimit),
             }
         )
+    if not metrics:
+        raise RuntimeError("nvidia-smi returned no GPU rows")
     return metrics
 
 
-def collect_once(user: str) -> Dict[str, object]:
+def query_node_gpu_metrics_with_retry(
+    node: str,
+    gpu_timeout: int,
+    ssh_connect_timeout: int,
+    gpu_retries: int,
+    gpu_retry_delay: float,
+) -> List[Dict[str, object]]:
+    last_exc: Optional[Exception] = None
+    for attempt in range(gpu_retries + 1):
+        try:
+            return get_node_gpu_metrics(node, gpu_timeout=gpu_timeout, ssh_connect_timeout=ssh_connect_timeout)
+        except Exception as exc:
+            last_exc = exc
+            if attempt < gpu_retries:
+                time.sleep(max(gpu_retry_delay, 0.0))
+    raise RuntimeError(f"node {node} query failed after {gpu_retries + 1} attempts: {last_exc}")
+
+
+def collect_once(
+    user: str,
+    last_node_metrics: Dict[str, List[Dict[str, object]]],
+    gpu_timeout: int,
+    ssh_connect_timeout: int,
+    gpu_retries: int,
+    gpu_retry_delay: float,
+    use_stale_on_error: bool,
+) -> Dict[str, object]:
     running = get_running_jobs(user)
     pending = get_pending_jobs(user)
     node_cache: Dict[str, List[Dict[str, object]]] = {}
@@ -191,8 +236,27 @@ def collect_once(user: str) -> Dict[str, object]:
             if node_s in node_cache:
                 continue
             try:
-                node_cache[node_s] = get_node_gpu_metrics(node_s)
+                metrics = query_node_gpu_metrics_with_retry(
+                    node_s,
+                    gpu_timeout=gpu_timeout,
+                    ssh_connect_timeout=ssh_connect_timeout,
+                    gpu_retries=gpu_retries,
+                    gpu_retry_delay=gpu_retry_delay,
+                )
+                node_cache[node_s] = metrics
+                last_node_metrics[node_s] = metrics
             except Exception as exc:
+                if use_stale_on_error and node_s in last_node_metrics:
+                    stale = []
+                    for row in last_node_metrics[node_s]:
+                        if isinstance(row, dict):
+                            copied = dict(row)
+                            copied["stale"] = True
+                            copied["stale_reason"] = str(exc)
+                            stale.append(copied)
+                    if stale:
+                        node_cache[node_s] = stale
+                        continue
                 node_cache[node_s] = [{"error": str(exc)}]
 
     for job in running:
@@ -236,6 +300,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--push-url", default=None, help="Center endpoint, e.g. http://center:18080/api/collector")
     parser.add_argument("--push-token", default=None, help="Optional collector token for center auth.")
     parser.add_argument("--interval", type=int, default=10, help="Collect interval seconds.")
+    parser.add_argument("--gpu-timeout", type=int, default=15, help="GPU query timeout seconds per attempt.")
+    parser.add_argument("--ssh-connect-timeout", type=int, default=5, help="SSH connect timeout seconds.")
+    parser.add_argument("--gpu-retries", type=int, default=1, help="Retry count for failed GPU query.")
+    parser.add_argument("--gpu-retry-delay", type=float, default=1.0, help="Delay seconds between GPU retries.")
+    parser.add_argument("--no-stale-on-error", action="store_true", help="Do not reuse last successful node metrics on error.")
     return parser.parse_args()
 
 
@@ -246,13 +315,31 @@ def main() -> int:
     args = parse_args()
     out_file = Path(args.output_dir).resolve() / f"{args.user}.json"
     interval = max(args.interval, 3)
+    gpu_timeout = max(args.gpu_timeout, 3)
+    ssh_connect_timeout = max(args.ssh_connect_timeout, 1)
+    gpu_retries = max(args.gpu_retries, 0)
+    gpu_retry_delay = max(args.gpu_retry_delay, 0.0)
+    use_stale_on_error = not args.no_stale_on_error
+    last_node_metrics: Dict[str, List[Dict[str, object]]] = {}
     print(f"[collector] user={args.user} output={out_file} interval={interval}s")
+    print(
+        f"[collector] gpu_timeout={gpu_timeout}s ssh_connect_timeout={ssh_connect_timeout}s "
+        f"gpu_retries={gpu_retries} stale_on_error={use_stale_on_error}"
+    )
     if args.push_url:
         print(f"[collector] push_url={args.push_url}")
 
     while True:
         try:
-            payload = collect_once(args.user)
+            payload = collect_once(
+                args.user,
+                last_node_metrics=last_node_metrics,
+                gpu_timeout=gpu_timeout,
+                ssh_connect_timeout=ssh_connect_timeout,
+                gpu_retries=gpu_retries,
+                gpu_retry_delay=gpu_retry_delay,
+                use_stale_on_error=use_stale_on_error,
+            )
             write_json_atomic(out_file, payload)
             if args.push_url:
                 push_to_center(args.push_url, payload, args.push_token)

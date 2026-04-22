@@ -2,7 +2,7 @@
 set -euo pipefail
 
 if [ "$#" -lt 1 ]; then
-  echo "Usage: $0 <user> [--output-dir ./collector_data] [--push-url http://center:18080/api/collector] [--push-token xxx] [--interval 10]"
+  echo "Usage: $0 <user> [--output-dir ./collector_data] [--push-url http://center:18080/api/collector] [--push-token xxx] [--interval 10] [--gpu-timeout 30] [--gpu-retries 2]"
   exit 1
 fi
 
