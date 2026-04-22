@@ -33,14 +33,25 @@ cd Node_Monitor
 tmux new -s mon_<user>
 ./start_user_collector.sh <user> \
   --interval 10 \
-  --push-url http://<center-host>:18000/api/collector \
+  --gpu-timeout 30 \
+  --ssh-connect-timeout 8 \
+  --gpu-retries 2 \
+  --gpu-retry-delay 1.5 \
+  --push-url http://<center-host>:18080/api/collector \
   --push-token <token>
 ```
 
 Example:
 
 ```bash
-./start_user_collector.sh user_a --interval 10 --push-url http://172.11.11.1:18000/api/collector --push-token mytoken
+./start_user_collector.sh user_a \
+  --interval 10 \
+  --gpu-timeout 30 \
+  --ssh-connect-timeout 8 \
+  --gpu-retries 2 \
+  --gpu-retry-delay 1.5 \
+  --push-url http://172.11.11.1:18080/api/collector \
+  --push-token mytoken
 ```
 
 ## Start Center
@@ -50,7 +61,7 @@ Run on center host:
 ```bash
 cd Node_Monitor
 ./start_monitor_web.sh user_a user_b \
-  --port 18000 \
+  --port 18080 \
   --refresh 10 \
   --collector-token mytoken \
   --history-points 360
@@ -66,12 +77,12 @@ Current default behavior:
 Recommended access:
 
 ```bash
-ssh -L 18000:127.0.0.1:18000 <user>@<center-host>
+ssh -L 18080:127.0.0.1:18080 <user>@<center-host>
 ```
 
 Then open locally:
 
-- `http://127.0.0.1:18000`
+- `http://127.0.0.1:18080`
 
 If you need remote UI access (not recommended by default), add:
 
@@ -91,14 +102,32 @@ If you need remote UI access (not recommended by default), add:
 - **Pending Jobs**
   - global table
 
+## Collector Timeout / Retry Options
+
+Collector supports the following options for unstable nodes:
+
+- `--gpu-timeout`: timeout for one GPU query attempt (seconds)
+- `--ssh-connect-timeout`: SSH connection timeout (seconds)
+- `--gpu-retries`: retry count when GPU query fails
+- `--gpu-retry-delay`: delay between retries (seconds)
+- `--no-stale-on-error`: disable stale fallback
+
+Default behavior includes stale fallback:
+
+- If a node query fails after retries, collector can reuse the last successful
+  GPU metrics for that node and mark them as stale.
+- This keeps dashboard stable during transient SSH/NVIDIA hiccups.
+
 ## Troubleshooting
 
-- `unrecognized arguments: --push-url ...`
-  - collector script on that account is old version; verify path and run `python3 user_gpu_collector.py --help`.
+- `unrecognized arguments: --gpu-timeout ...`
+  - collector script on that account is old version; verify path and run
+    `python3 user_gpu_collector.py --help`.
 - `invalid collector token`
   - ensure collector `--push-token` matches center `--collector-token`.
-- no GPU metrics
+- no GPU metrics / timeout on `ssh ... nvidia-smi`
   - check SSH from that user to allocated nodes and `nvidia-smi` availability.
+  - increase `--gpu-timeout`, `--ssh-connect-timeout`, and `--gpu-retries`.
 - empty dashboard
   - verify collectors are running and pushing to the correct center URL.
 
