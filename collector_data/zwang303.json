@@ -1,0 +1,109 @@
+{
+  "user": "zwang303",
+  "host": "n09",
+  "timestamp": "2026-04-22 15:21:45",
+  "running_jobs": [
+    {
+      "job_id": "1331209",
+      "user": "zwang303",
+      "partition": "nvl",
+      "partition_raw": "nvl",
+      "partitions": [
+        "nvl"
+      ],
+      "state": "RUNNING",
+      "reason": "n09",
+      "nodes": [
+        "n09"
+      ],
+      "node_count": 1,
+      "requested_gpus": 4,
+      "elapsed": "2-19:10:05",
+      "name": "interactive_4",
+      "node_gpu_metrics": {
+        "n09": [
+          {
+            "index": 0,
+            "name": "NVIDIA H100 NVL",
+            "memory_used_mb": 71460,
+            "memory_total_mb": 95830,
+            "utilization_gpu_pct": 93,
+            "power_draw_w": 387.64,
+            "power_limit_w": 400.0
+          },
+          {
+            "index": 1,
+            "name": "NVIDIA H100 NVL",
+            "memory_used_mb": 70814,
+            "memory_total_mb": 95830,
+            "utilization_gpu_pct": 93,
+            "power_draw_w": 395.59,
+            "power_limit_w": 400.0
+          },
+          {
+            "index": 2,
+            "name": "NVIDIA H100 NVL",
+            "memory_used_mb": 70814,
+            "memory_total_mb": 95830,
+            "utilization_gpu_pct": 93,
+            "power_draw_w": 391.37,
+            "power_limit_w": 400.0
+          },
+          {
+            "index": 3,
+            "name": "NVIDIA H100 NVL",
+            "memory_used_mb": 70814,
+            "memory_total_mb": 95830,
+            "utilization_gpu_pct": 92,
+            "power_draw_w": 383.56,
+            "power_limit_w": 400.0
+          }
+        ]
+      }
+    }
+  ],
+  "pending_jobs": [
+    {
+      "job_id": "1335135",
+      "user": "zwang303",
+      "partition": "nvl",
+      "partition_raw": "nvl,h100",
+      "partitions": [
+        "nvl",
+        "h100"
+      ],
+      "state": "PENDING",
+      "reason": "(Priority)",
+      "requested_gpus": 4,
+      "name": "interactive_15"
+    },
+    {
+      "job_id": "1335136",
+      "user": "zwang303",
+      "partition": "nvl",
+      "partition_raw": "nvl,h100",
+      "partitions": [
+        "nvl",
+        "h100"
+      ],
+      "state": "PENDING",
+      "reason": "(Priority)",
+      "requested_gpus": 4,
+      "name": "interactive_13"
+    },
+    {
+      "job_id": "1335137",
+      "user": "zwang303",
+      "partition": "nvl",
+      "partition_raw": "nvl,h100",
+      "partitions": [
+        "nvl",
+        "h100"
+      ],
+      "state": "PENDING",
+      "reason": "(Priority)",
+      "requested_gpus": 4,
+      "name": "interactive_14"
+    }
+  ]
+}

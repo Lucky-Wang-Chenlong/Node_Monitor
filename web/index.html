@@ -1,0 +1,650 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Slurm Multi-User GPU Monitor</title>
+  <style>
+    :root {
+      --bg: #ffffff;
+      --panel: #ffffff;
+      --panel-soft: #f8fafc;
+      --text: #0f172a;
+      --muted: #64748b;
+      --good: #16a34a;
+      --bad: #dc2626;
+      --line: #dbe3ef;
+    }
+    body {
+      margin: 0;
+      padding: 18px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans", "Helvetica Neue", Arial, sans-serif;
+    }
+    h1, h2, h3 { margin: 0 0 10px; }
+    h1 { font-size: 22px; }
+    h2 { font-size: 18px; margin-top: 24px; }
+    h3 { font-size: 15px; }
+    .meta {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+      color: var(--muted);
+      margin-bottom: 14px;
+    }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 12px;
+      margin-bottom: 14px;
+    }
+    .error {
+      color: #ffffff;
+      background: var(--bad);
+      border-radius: 6px;
+      padding: 10px;
+      margin-bottom: 12px;
+      display: none;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 7px 8px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th { background: #f3f7fd; color: #334155; }
+    .muted { color: var(--muted); }
+    .good { color: var(--good); }
+    .bad { color: var(--bad); }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+    .row-wrap { display: flex; flex-wrap: wrap; gap: 10px 14px; }
+    .chip { background: #f1f5f9; border: 1px solid #dbe4f0; border-radius: 6px; padding: 4px 8px; font-size: 12px; }
+    .user-block {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--panel-soft);
+      padding: 10px;
+      margin-bottom: 12px;
+    }
+    .job-block {
+      border: 1px solid #d6e1ee;
+      border-radius: 8px;
+      padding: 10px;
+      background: #ffffff;
+      margin-top: 8px;
+    }
+    .subtable {
+      margin-top: 8px;
+    }
+    .job-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+    }
+    .btn {
+      border: 1px solid #94a3b8;
+      background: #ffffff;
+      color: #1e293b;
+      border-radius: 6px;
+      padding: 4px 10px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    .btn:hover { border-color: #3b82f6; color: #1d4ed8; }
+    .gpu-details { display: none; margin-top: 8px; }
+    .node-block {
+      margin-top: 8px;
+      padding: 8px;
+      border: 1px solid #d9e4f2;
+      border-radius: 8px;
+      background: #f8fbff;
+    }
+    .gpu-card {
+      margin-top: 8px;
+      padding: 8px;
+      border: 1px solid #d8e3f0;
+      border-radius: 8px;
+      background: #ffffff;
+    }
+    .gpu-title {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+    .metric-row { margin-top: 6px; }
+    .metric-head {
+      display: flex;
+      justify-content: space-between;
+      color: #334155;
+      margin-bottom: 2px;
+      font-size: 12px;
+    }
+    .bar {
+      width: 100%;
+      height: 8px;
+      border-radius: 999px;
+      background: #e2e8f0;
+      overflow: hidden;
+    }
+    .bar-fill { height: 100%; border-radius: 999px; transition: width 0.3s ease; }
+    .bar-mem { background: #3b82f6; }
+    .bar-util { background: #16a34a; }
+    .bar-pwr { background: #f59e0b; }
+    .modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.3);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 999;
+    }
+    .modal-content {
+      width: min(940px, 96vw);
+      background: #ffffff;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 12px;
+    }
+    .modal-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .chart-actions {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .metric-btn {
+      border: 1px solid #94a3b8;
+      background: #ffffff;
+      color: #1e293b;
+      border-radius: 6px;
+      padding: 4px 8px;
+      cursor: pointer;
+    }
+    .metric-btn.active {
+      border-color: #3b82f6;
+      color: #1d4ed8;
+      background: #eff6ff;
+    }
+    #history-canvas {
+      width: 100%;
+      height: 320px;
+      border: 1px solid #d8e3f0;
+      border-radius: 8px;
+      background: #ffffff;
+    }
+  </style>
+</head>
+<body>
+  <h1>Slurm Multi-User GPU Dashboard</h1>
+  <div class="meta">
+    <div>Users: <span id="users" class="mono">-</span></div>
+    <div>Last refresh: <span id="ts" class="mono">-</span></div>
+    <div>Refresh interval: <span id="refresh" class="mono">15s</span></div>
+  </div>
+
+  <div class="card">
+    <h2>Collector Status</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>User</th>
+          <th>Host</th>
+          <th>Collector Time</th>
+          <th>Received At (Center)</th>
+          <th>Source</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody id="collectors-tbody"></tbody>
+    </table>
+  </div>
+
+  <div id="error" class="error"></div>
+
+  <h2>Running Jobs & GPU Metrics</h2>
+  <div class="card" id="running-users"></div>
+
+  <h2>Partition Idle Rate</h2>
+  <div class="card" id="partition-idle-users"></div>
+
+  <h2>Pending Jobs</h2>
+  <div class="card">
+    <table>
+      <thead>
+        <tr>
+          <th>Job</th>
+          <th>User</th>
+          <th>Partition</th>
+          <th>Requested GPUs</th>
+          <th>Reason</th>
+          <th>Name</th>
+        </tr>
+      </thead>
+      <tbody id="pending-tbody"></tbody>
+    </table>
+  </div>
+
+  <div id="history-modal" class="modal">
+    <div class="modal-content">
+      <div class="modal-head">
+        <div id="history-title" class="mono">GPU History</div>
+        <button id="history-close" class="btn">Close</button>
+      </div>
+      <div class="chart-actions">
+        <button class="metric-btn active" data-metric="memory_used_mb">Memory (MiB)</button>
+        <button class="metric-btn" data-metric="utilization_gpu_pct">Utilization (%)</button>
+        <button class="metric-btn" data-metric="power_draw_w">Power (W)</button>
+      </div>
+      <canvas id="history-canvas" width="900" height="320"></canvas>
+      <div id="history-note" class="muted" style="margin-top: 6px;"></div>
+    </div>
+  </div>
+
+  <script>
+    const REFRESH_SECONDS = 15;
+    document.getElementById("refresh").textContent = `${REFRESH_SECONDS}s`;
+    const historyState = {
+      user: "",
+      node: "",
+      gpuIndex: -1,
+      metric: "memory_used_mb",
+      points: [],
+      fixedMaxY: 1,
+    };
+
+    function pct(v) {
+      if (v === null || v === undefined || Number.isNaN(v)) return "-";
+      return `${(v * 100).toFixed(1)}%`;
+    }
+
+    function esc(v) {
+      return String(v ?? "").replace(/[&<>"']/g, (ch) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        "\"": "&quot;",
+        "'": "&#39;",
+      }[ch]));
+    }
+
+    function clamp(v, min, max) {
+      return Math.max(min, Math.min(max, v));
+    }
+
+    function bar(label, valueText, ratio, cssClass) {
+      const safeRatio = clamp(ratio || 0, 0, 1);
+      return `<div class="metric-row"><div class="metric-head"><span>${label}</span><span class="mono">${valueText}</span></div><div class="bar"><div class="bar-fill ${cssClass}" style="width:${(safeRatio * 100).toFixed(1)}%"></div></div></div>`;
+    }
+
+    function gpuCard(g, user, node) {
+      if (g.error) return `<div class="bad">Query failed: ${esc(g.error)}</div>`;
+      const memRatio = g.memory_total_mb > 0 ? g.memory_used_mb / g.memory_total_mb : 0;
+      const utilRatio = (g.utilization_gpu_pct || 0) / 100;
+      const powerRatio = g.power_limit_w > 0 ? g.power_draw_w / g.power_limit_w : 0;
+      return `
+        <div class="gpu-card">
+          <div class="gpu-title">
+            <div class="mono">GPU${g.index} ${esc(g.name || "")}</div>
+            <button class="btn show-history-btn" data-user="${esc(user)}" data-node="${esc(node)}" data-gpu-index="${g.index}">History Chart</button>
+          </div>
+          ${bar("MEM", `${g.memory_used_mb}/${g.memory_total_mb} MiB`, memRatio, "bar-mem")}
+          ${bar("UTIL", `${g.utilization_gpu_pct}%`, utilRatio, "bar-util")}
+          ${bar("PWR", `${Number(g.power_draw_w || 0).toFixed(1)}/${Number(g.power_limit_w || 0).toFixed(1)} W`, powerRatio, "bar-pwr")}
+        </div>
+      `;
+    }
+
+    function groupByUser(rows) {
+      const grouped = {};
+      (rows || []).forEach((job) => {
+        const user = job.user || "UNKNOWN";
+        if (!grouped[user]) grouped[user] = [];
+        grouped[user].push(job);
+      });
+      return grouped;
+    }
+
+    function renderRunning(rows) {
+      const root = document.getElementById("running-users");
+      if (!rows || rows.length === 0) {
+        root.innerHTML = `<div class="muted">No running jobs.</div>`;
+        return;
+      }
+      const grouped = groupByUser(rows);
+      const users = Object.keys(grouped).sort();
+      root.innerHTML = users.map((user) => {
+        const jobs = grouped[user];
+        const jobHtml = jobs.map((job) => {
+          const details = (job.nodes || []).map((node) => {
+            const gpus = (job.node_gpu_metrics?.[node] || []).map((g) => gpuCard(g, user, node)).join("");
+            return `<div class="node-block"><div class="mono">Node: ${esc(node)}</div>${gpus || '<div class="muted">No GPU metrics</div>'}</div>`;
+          }).join("");
+          return `
+            <div class="job-block">
+              <div class="job-top">
+                <div class="row-wrap">
+                  <span class="chip mono">Job: ${esc(job.job_id)}</span>
+                  <span class="chip">Partition: ${esc(job.partition_raw || job.partition || "-")}</span>
+                  <span class="chip">Name: ${esc(job.name || "-")}</span>
+                  <span class="chip">Elapsed: ${esc(job.elapsed || "-")}</span>
+                  <span class="chip mono">Requested GPUs: ${job.requested_gpus ?? "-"}</span>
+                </div>
+                <button class="btn toggle-gpu-btn">Show GPU Details</button>
+              </div>
+              <div class="gpu-details">${details || '<div class="muted">No node info</div>'}</div>
+            </div>
+          `;
+        }).join("");
+        return `<div class="user-block"><h3>User: <span class="mono">${esc(user)}</span></h3>${jobHtml}</div>`;
+      }).join("");
+    }
+
+    function renderPendingPartitions(rows) {
+      return rows;
+    }
+
+    function buildPendingSummary(jobs, partitionIndex) {
+      const summary = {};
+      jobs.forEach((job) => {
+        const targets = Array.isArray(job.partitions) && job.partitions.length
+          ? job.partitions
+          : [job.partition || "UNKNOWN"];
+        targets.forEach((partition) => {
+          const p = String(partition || "UNKNOWN");
+          if (!summary[p]) {
+            const s = partitionIndex[p] || {};
+            summary[p] = {
+              partition: p,
+              pending_jobs: 0,
+              pending_gpus: 0,
+              node_idle_rate: s.node_idle_rate,
+              gpu_idle_rate_est: s.gpu_idle_rate_est,
+              gpu_free_est: s.gpu_free_est,
+            };
+          }
+          summary[p].pending_jobs += 1;
+          if (Number.isInteger(job.requested_gpus)) {
+            summary[p].pending_gpus += job.requested_gpus;
+          }
+        });
+      });
+      return Object.values(summary).sort((a, b) => String(a.partition).localeCompare(String(b.partition)));
+    }
+
+    function renderPartitionIdleByUser(rows, partitionStats) {
+      const root = document.getElementById("partition-idle-users");
+      if (!rows || rows.length === 0) {
+        root.innerHTML = `<div class="muted">No pending jobs.</div>`;
+        return;
+      }
+      const grouped = groupByUser(rows);
+      const users = Object.keys(grouped).sort();
+      const partitionIndex = {};
+      (partitionStats || []).forEach((x) => {
+        partitionIndex[x.partition] = x;
+      });
+
+      root.innerHTML = users.map((user) => {
+        const jobs = grouped[user];
+        const summary = buildPendingSummary(jobs, partitionIndex);
+        const summaryTable = `
+          <div class="subtable">
+            <table>
+              <thead>
+                <tr>
+                  <th>Partition</th>
+                  <th>Pending Jobs</th>
+                  <th>Pending GPUs</th>
+                  <th>Node Idle Rate</th>
+                  <th>GPU Idle Rate (est)</th>
+                  <th>GPU Free (est)</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${summary.length ? summary.map((x) => `
+                  <tr>
+                    <td>${esc(x.partition)}</td>
+                    <td class="mono">${x.pending_jobs}</td>
+                    <td class="mono">${x.pending_gpus}</td>
+                    <td>${pct(x.node_idle_rate)}</td>
+                    <td>${pct(x.gpu_idle_rate_est)}</td>
+                    <td class="mono">${x.gpu_free_est ?? "-"}</td>
+                  </tr>
+                `).join("") : `<tr><td colspan="6" class="muted">No partition summary.</td></tr>`}
+              </tbody>
+            </table>
+          </div>
+        `;
+        return `<div class="user-block"><h3>User: <span class="mono">${esc(user)}</span></h3>${summaryTable}</div>`;
+      }).join("");
+    }
+
+    function renderPendingJobsClassic(rows) {
+      const tbody = document.getElementById("pending-tbody");
+      if (!rows || rows.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6" class="muted">No pending jobs.</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = rows.map((j) => `
+        <tr>
+          <td class="mono">${esc(j.job_id)}</td>
+          <td>${esc(j.user)}</td>
+          <td>${esc(j.partition_raw || j.partition)}</td>
+          <td class="mono">${j.requested_gpus ?? "-"}</td>
+          <td>${esc(j.reason)}</td>
+          <td>${esc(j.name)}</td>
+        </tr>
+      `).join("");
+    }
+
+    function renderCollectors(rows) {
+      const tbody = document.getElementById("collectors-tbody");
+      if (!rows || rows.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6" class="muted">No collector status yet.</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = rows.map((x) => `
+        <tr>
+          <td>${esc(x.user)}</td>
+          <td class="mono">${esc(x.host || "-")}</td>
+          <td class="mono">${esc(x.timestamp || "-")}</td>
+          <td class="mono">${esc(x.received_at || "-")}</td>
+          <td class="mono">${esc(x.source || "-")}</td>
+          <td class="${x.error ? "bad" : "good"}">${esc(x.error || "OK")}</td>
+        </tr>
+      `).join("");
+    }
+
+    function metricLabel(metric) {
+      if (metric === "utilization_gpu_pct") return "Utilization (%)";
+      if (metric === "power_draw_w") return "Power (W)";
+      return "Memory (MiB)";
+    }
+
+    function resolveFixedScale(metric, points) {
+      if (metric === "utilization_gpu_pct") return 100;
+      if (metric === "power_draw_w") {
+        const maxLimit = Math.max(...points.map((p) => Number(p.power_limit_w || 0)), 1);
+        return maxLimit;
+      }
+      const maxMem = Math.max(...points.map((p) => Number(p.memory_total_mb || 0)), 1);
+      return maxMem;
+    }
+
+    function prepareCanvas(canvas) {
+      const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+      const cssWidth = Math.max(Math.floor(rect.width), 100);
+      const cssHeight = Math.max(Math.floor(rect.height), 120);
+      const targetWidth = Math.floor(cssWidth * dpr);
+      const targetHeight = Math.floor(cssHeight * dpr);
+      if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+        canvas.width = targetWidth;
+        canvas.height = targetHeight;
+      }
+      const ctx = canvas.getContext("2d");
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      return { ctx, width: cssWidth, height: cssHeight };
+    }
+
+    function drawChart() {
+      const canvas = document.getElementById("history-canvas");
+      const note = document.getElementById("history-note");
+      const { ctx, width, height } = prepareCanvas(canvas);
+      const points = historyState.points || [];
+      const metric = historyState.metric;
+      ctx.clearRect(0, 0, width, height);
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, width, height);
+      const left = 54, right = width - 16, top = 18, bottom = height - 34;
+      ctx.strokeStyle = "#cbd5e1";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(left, top, right - left, bottom - top);
+
+      if (!points.length) {
+        note.textContent = "No history points yet. Wait for more refresh cycles.";
+        return;
+      }
+
+      const maxY = Math.max(resolveFixedScale(metric, points), 1);
+      historyState.fixedMaxY = maxY;
+
+      ctx.strokeStyle = "#e2e8f0";
+      ctx.fillStyle = "#64748b";
+      ctx.font = "12px monospace";
+      for (let i = 0; i <= 4; i++) {
+        const y = top + ((bottom - top) * i) / 4;
+        ctx.beginPath();
+        ctx.moveTo(left, y);
+        ctx.lineTo(right, y);
+        ctx.stroke();
+        const v = (maxY * (4 - i)) / 4;
+        ctx.fillText(v.toFixed(0), 6, y + 4);
+      }
+
+      ctx.beginPath();
+      points.forEach((p, idx) => {
+        const x = left + ((right - left) * idx) / Math.max(points.length - 1, 1);
+        const v = Number(p[metric] || 0);
+        const y = bottom - ((bottom - top) * clamp(v / maxY, 0, 1));
+        if (idx === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      });
+      ctx.strokeStyle = metric === "memory_used_mb" ? "#3b82f6" : (metric === "utilization_gpu_pct" ? "#16a34a" : "#f59e0b");
+      ctx.lineWidth = 2.2;
+      ctx.stroke();
+      ctx.fillStyle = ctx.strokeStyle;
+      points.forEach((p, idx) => {
+        if (idx % 4 !== 0 && idx !== points.length - 1) return;
+        const x = left + ((right - left) * idx) / Math.max(points.length - 1, 1);
+        const v = Number(p[metric] || 0);
+        const y = bottom - ((bottom - top) * clamp(v / maxY, 0, 1));
+        ctx.beginPath();
+        ctx.arc(x, y, 2.2, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      const firstTs = points[0]?.ts;
+      const lastTs = points[points.length - 1]?.ts;
+      const first = firstTs ? new Date(firstTs * 1000).toLocaleTimeString() : "-";
+      const last = lastTs ? new Date(lastTs * 1000).toLocaleTimeString() : "-";
+      note.textContent = `${metricLabel(metric)} | points=${points.length} | fixed y-max=${maxY.toFixed(0)} | range=${first} - ${last}`;
+    }
+
+    async function openHistory(user, node, gpuIndex) {
+      const modal = document.getElementById("history-modal");
+      document.getElementById("history-title").textContent = `${user} / ${node} / GPU${gpuIndex}`;
+      historyState.user = user;
+      historyState.node = node;
+      historyState.gpuIndex = Number(gpuIndex);
+      historyState.points = [];
+      modal.style.display = "flex";
+      try {
+        const url = `/api/gpu-history?user=${encodeURIComponent(user)}&node=${encodeURIComponent(node)}&gpu_index=${encodeURIComponent(gpuIndex)}`;
+        const res = await fetch(url, { cache: "no-store" });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        historyState.points = data.series || [];
+        drawChart();
+      } catch (err) {
+        document.getElementById("history-note").textContent = `Failed to load history: ${err.message}`;
+      }
+    }
+
+    async function refresh() {
+      const errorBox = document.getElementById("error");
+      try {
+        const res = await fetch(`/api/metrics?t=${Date.now()}`, { cache: "no-store" });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+
+        errorBox.style.display = "none";
+        document.getElementById("users").textContent = (data.users || []).join(", ");
+        document.getElementById("ts").textContent = data.timestamp || "-";
+        renderCollectors(data.collectors || []);
+        renderRunning(data.running_jobs || []);
+        renderPartitionIdleByUser(data.pending_jobs || [], data.partition_stats || []);
+        renderPendingJobsClassic(data.pending_jobs || []);
+      } catch (err) {
+        errorBox.style.display = "block";
+        errorBox.textContent = `Refresh failed: ${err.message}`;
+      }
+    }
+
+    document.addEventListener("click", (e) => {
+      const toggleBtn = e.target.closest(".toggle-gpu-btn");
+      if (toggleBtn) {
+        const block = toggleBtn.closest(".job-block");
+        const details = block?.querySelector(".gpu-details");
+        if (details) {
+          const open = details.style.display === "block";
+          details.style.display = open ? "none" : "block";
+          toggleBtn.textContent = open ? "Show GPU Details" : "Hide GPU Details";
+        }
+        return;
+      }
+
+      const historyBtn = e.target.closest(".show-history-btn");
+      if (historyBtn) {
+        openHistory(historyBtn.dataset.user, historyBtn.dataset.node, historyBtn.dataset.gpuIndex);
+        return;
+      }
+
+      if (e.target.id === "history-close" || e.target.id === "history-modal") {
+        document.getElementById("history-modal").style.display = "none";
+      }
+
+      const metricBtn = e.target.closest(".metric-btn");
+      if (metricBtn) {
+        document.querySelectorAll(".metric-btn").forEach((x) => x.classList.remove("active"));
+        metricBtn.classList.add("active");
+        historyState.metric = metricBtn.dataset.metric;
+        drawChart();
+      }
+    });
+
+    refresh();
+    setInterval(refresh, REFRESH_SECONDS * 1000);
+    window.addEventListener("resize", () => {
+      if (document.getElementById("history-modal").style.display === "flex") {
+        drawChart();
+      }
+    });
+  </script>
+</body>
+</html>
