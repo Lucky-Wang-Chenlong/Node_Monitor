@@ -33,14 +33,14 @@ cd Node_Monitor
 tmux new -s mon_<user>
 ./start_user_collector.sh <user> \
   --interval 10 \
-  --push-url http://<center-host>:18080/api/collector \
+  --push-url http://<center-host>:18000/api/collector \
   --push-token <token>
 ```
 
 Example:
 
 ```bash
-./start_user_collector.sh jchen293 --interval 10 --push-url http://172.20.13.9:18080/api/collector --push-token mytoken
+./start_user_collector.sh user_a --interval 10 --push-url http://172.11.11.1:18000/api/collector --push-token mytoken
 ```
 
 ## Start Center
@@ -49,8 +49,8 @@ Run on center host:
 
 ```bash
 cd Node_Monitor
-./start_monitor_web.sh zwang303 jchen293 \
-  --port 18080 \
+./start_monitor_web.sh user_a user_b \
+  --port 18000 \
   --refresh 10 \
   --collector-token mytoken \
   --history-points 360
@@ -66,12 +66,12 @@ Current default behavior:
 Recommended access:
 
 ```bash
-ssh -L 18080:127.0.0.1:18080 <user>@<center-host>
+ssh -L 18000:127.0.0.1:18000 <user>@<center-host>
 ```
 
 Then open locally:
 
-- `http://127.0.0.1:18080`
+- `http://127.0.0.1:18000`
 
 If you need remote UI access (not recommended by default), add:
 

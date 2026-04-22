@@ -266,6 +266,9 @@
       points: [],
       fixedMaxY: 1,
     };
+    const uiState = {
+      expandedJobs: new Set(),
+    };
 
     function pct(v) {
       if (v === null || v === undefined || Number.isNaN(v)) return "-";
@@ -319,6 +322,10 @@
       return grouped;
     }
 
+    function getJobKey(user, job) {
+      return `${user}|${job.job_id}`;
+    }
+
     function renderRunning(rows) {
       const root = document.getElementById("running-users");
       if (!rows || rows.length === 0) {
@@ -330,6 +337,8 @@
       root.innerHTML = users.map((user) => {
         const jobs = grouped[user];
         const jobHtml = jobs.map((job) => {
+          const jobKey = getJobKey(user, job);
+          const isExpanded = uiState.expandedJobs.has(jobKey);
           const details = (job.nodes || []).map((node) => {
             const gpus = (job.node_gpu_metrics?.[node] || []).map((g) => gpuCard(g, user, node)).join("");
             return `<div class="node-block"><div class="mono">Node: ${esc(node)}</div>${gpus || '<div class="muted">No GPU metrics</div>'}</div>`;
@@ -344,9 +353,9 @@
                   <span class="chip">Elapsed: ${esc(job.elapsed || "-")}</span>
                   <span class="chip mono">Requested GPUs: ${job.requested_gpus ?? "-"}</span>
                 </div>
-                <button class="btn toggle-gpu-btn">Show GPU Details</button>
+                <button class="btn toggle-gpu-btn" data-job-key="${esc(jobKey)}">${isExpanded ? "Hide GPU Details" : "Show GPU Details"}</button>
               </div>
-              <div class="gpu-details">${details || '<div class="muted">No node info</div>'}</div>
+              <div class="gpu-details" style="display:${isExpanded ? "block" : "none"}">${details || '<div class="muted">No node info</div>'}</div>
             </div>
           `;
         }).join("");
@@ -611,10 +620,18 @@
       if (toggleBtn) {
         const block = toggleBtn.closest(".job-block");
         const details = block?.querySelector(".gpu-details");
+        const jobKey = toggleBtn.dataset.jobKey || "";
         if (details) {
           const open = details.style.display === "block";
           details.style.display = open ? "none" : "block";
           toggleBtn.textContent = open ? "Show GPU Details" : "Hide GPU Details";
+          if (jobKey) {
+            if (open) {
+              uiState.expandedJobs.delete(jobKey);
+            } else {
+              uiState.expandedJobs.add(jobKey);
+            }
+          }
         }
         return;
       }
